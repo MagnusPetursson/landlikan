@@ -131,8 +131,8 @@ const TEXT = {
   // About
   aboutElevationHead: { is: 'Hæðargögn', en: 'Elevation' },
   aboutElevation: {
-    is: 'Terrain Tiles (Mapzen) úr AWS Open Data. Á Íslandi byggja þau á ArcticDEM, um 5 m upplausn. Hæðirnar eru gefnar yfir sporvölu og eru hér færðar í hæð yfir sjávarmáli með EGM2008-láfletinum (um 60–68 m á Íslandi). Sjór er settur í 0 m. Yfirborð stöðuvatna getur skeikað um nokkra metra.',
-    en: 'Terrain Tiles (Mapzen) from AWS Open Data. In Iceland they are based on ArcticDEM, about 5 m resolution. The heights are given above the ellipsoid and are converted here to height above sea level with the EGM2008 geoid (about 60–68 m in Iceland). Sea is set to 0 m. Lake surfaces can be off by a few metres.',
+    is: 'Landslagið kemur úr ArcticDEM (um 4 m milli punkta) úr Terrain Tiles á AWS Open Data. ArcticDEM gefur hæð yfir sporvölu og er fært í hæð yfir sjávarmáli með EGM2008-láfletinum (60–68 m á Íslandi). Yfir vatni og þar sem ArcticDEM er gallað gildir Copernicus DEM GLO-30 (30 m) frá Mapterhorn: stöðuvötn eru slétt og sjór í 0 m. Copernicus DEM: © DLR e.V. 2010–2014 og © Airbus Defence and Space GmbH 2014–2018, veitt undir COPERNICUS af Evrópusambandinu og ESA; allur réttur áskilinn.',
+    en: 'The terrain comes from ArcticDEM (about 4 m between points) in Terrain Tiles on AWS Open Data. ArcticDEM gives height above the ellipsoid and is converted to height above sea level with the EGM2008 geoid (60–68 m in Iceland). Over water and where ArcticDEM is faulty, Copernicus DEM GLO-30 (30 m) from Mapterhorn is used: lakes are level and the sea is at 0 m. Copernicus DEM: © DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018, provided under COPERNICUS by the European Union and ESA; all rights reserved.',
   },
   aboutImageHead: { is: 'Gervihnattamynd', en: 'Satellite image' },
   aboutImage: {
@@ -160,8 +160,8 @@ const TEXT = {
     en: 'three.js (MIT), Leaflet (BSD-2-Clause), IBM Plex (OFL 1.1), Lucide (ISC).',
   },
   credits: {
-    is: 'Hæðargögn: ArcticDEM, Mapzen Terrain Tiles · Mynd: Sentinel-2 cloudless 2016, EOX',
-    en: 'Elevation: ArcticDEM, Mapzen Terrain Tiles · Imagery: Sentinel-2 cloudless 2016, EOX',
+    is: 'Hæðargögn: ArcticDEM, Copernicus DEM GLO-30 (Mapterhorn) · Mynd: Sentinel-2 cloudless 2016, EOX',
+    en: 'Elevation: ArcticDEM, Copernicus DEM GLO-30 (Mapterhorn) · Imagery: Sentinel-2 cloudless 2016, EOX',
   },
 };
 

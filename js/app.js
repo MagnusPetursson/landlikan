@@ -438,6 +438,7 @@ async function loadArea() {
   job.userCancelled = false;
   state.job = job;
   const bounds = state.bounds;
+  state.retry = null;
   const d = describeBounds(bounds);
   const plan = planGrid(d, SAMPLES[state.detail]);
   state.notices.view = null;
@@ -475,6 +476,14 @@ async function loadArea() {
         state.notices.view = { kind: 'info', key: 'cancelled', action: 'retry', actionLabel: 'retry' };
       }
     } else {
+      // Keep the screen consistent with the model that is still shown; "Try again"
+      // repeats the request that failed.
+      state.retry = { bounds, detail: state.detail };
+      if (state.loaded) {
+        state.bounds = state.loaded;
+        state.detail = state.loadedDetail;
+        map.setBounds(state.loaded);
+      }
       state.notices.view = { kind: 'danger', key: 'errorElevation', action: 'retry', actionLabel: 'retry' };
     }
     renderAll();
@@ -855,7 +864,13 @@ function init() {
   $('resetView').addEventListener('click', () => viewer && viewer.resetView());
   $('progressCancel').addEventListener('click', () => { if (state.job) state.job.abort(); });
   $('viewNotice').addEventListener('click', (e) => {
-    if (e.target.closest('[data-action="retry"]')) loadArea();
+    if (!e.target.closest('[data-action="retry"]')) return;
+    if (state.retry) {
+      state.bounds = state.retry.bounds;
+      state.detail = state.retry.detail;
+      map.setBounds(state.bounds);
+    }
+    loadArea();
   });
   $('exportStl').addEventListener('click', exportStl);
   $('exportSvg').addEventListener('click', exportSvg);

@@ -2,6 +2,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { buildTopology, fillPositions, solidCounts, meshVolume, writeStl, stlByteLength } from '../js/model.js';
 import { geoidHeight } from '../js/geoid.js';
+import { mergeHeights, thickRegions, flatMask, distanceTo } from '../js/merge.js';
 import { describePlace, fold } from '../js/search.js';
 import { num, setLang } from '../js/i18n.js';
 import { buildLayers, layoutSheets, sheetSvg, ringArea, layerCount } from '../js/contours.js';
@@ -75,6 +76,69 @@ for (const [nx, ny] of [[2, 2], [3, 2], [97, 61], [240, 320]]) {
   const worst = Math.max(...ref.map(([lat, lon, n]) => Math.abs(geoidHeight(lat, lon) - n)));
   check('geoid: within 0.3 m of EGM2008 at reference points', worst < 0.3, `worst ${worst.toFixed(2)} m`);
   check('geoid: clamps outside the grid', Number.isFinite(geoidHeight(70, -30)) && Number.isFinite(geoidHeight(60, -5)));
+}
+
+// Merging the detail source with the reference
+{
+  const nx = 200, ny = 160, spacing = 8, geoid = 66;
+  const truth = new Float32Array(nx * ny);
+  const c = new Float32Array(nx * ny);
+  const a = new Float32Array(nx * ny);
+  const flat = new Uint8Array(nx * ny);
+  const kind = new Uint8Array(nx * ny); // 1 sea, 2 lake, 3 wrong-datum patch, 4 cliff band, 5 blunder
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; };
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const o = j * nx + i;
+      let h = 40 + 0.9 * i + 30 * Math.sin(j / 17);
+      const sea = i < 30;
+      const lake = (i - 120) ** 2 + (j - 50) ** 2 < 22 * 22;
+      if (sea) h = 0;
+      if (lake) h = 150;
+      truth[o] = h;
+      c[o] = Math.round(h * 2) / 2; // the reference is quantised to 0.5 m
+      a[o] = h + rnd() * 4; // fine detail
+      if (sea) { kind[o] = 1; flat[o] = i < 27 ? 1 : 0; a[o] = rnd() * 6; }
+      if (lake) { kind[o] = 2; flat[o] = (i - 120) ** 2 + (j - 50) ** 2 < 18 * 18 ? 1 : 0; a[o] = 150 + rnd() * 8; }
+      if (i >= 60 && i < 95 && j >= 100 && j < 140) { kind[o] = 3; a[o] = h - 66 + rnd() * 10; } // other height system
+      if (i >= 150 && i < 152 && j > 20 && j < 140) { kind[o] = 4; a[o] = h - 45; } // cliff foot the reference smears
+      if (i >= 152 && i < 160 && j > 20 && j < 140) { truth[o] = h + 80; c[o] = h + 80; a[o] = h + 80 + rnd() * 4; } // the cliff itself
+      if (i >= 165 && i < 185 && j >= 110 && j < 135) { kind[o] = 5; truth[o] = h + 60; a[o] = h + 60 + rnd() * 4; } // summit the reference rounds off
+      if (i >= 100 && i < 103 && j >= 120 && j < 123) { kind[o] = 6; a[o] = h + 250; } // blunder on open ground
+      if (i >= 70 && i < 72 && j >= 60 && j < 62) { kind[o] = 6; a[o] = h - 66; } // small patch in the other height system
+    }
+  }
+  // A lake whose surface the detail source filled from the other height system.
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const o = j * nx + i;
+    if (kind[o] === 2 && j < 50) a[o] = 150 - 66;
+  }
+  const { data, replaced } = mergeHeights({ a, c, flat, nx, ny, spacing, geoid });
+  const worst = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+  let cliffKept = 0, cliffCells = 0;
+  for (let o = 0; o < data.length; o++) {
+    const err = Math.abs(data[o] - truth[o]);
+    if (kind[o] === 4) { cliffCells++; if (Math.abs(data[o] - a[o]) < 1e-6) cliffKept++; continue; }
+    if (err > worst[kind[o]]) worst[kind[o]] = err;
+  }
+  check('merge: open land keeps the fine detail within its noise', worst[0] <= 2.5, `worst ${worst[0].toFixed(1)} m`);
+  check('merge: sea is level', worst[1] <= 3.1 && data[10] === 0 && data[5 * nx + 3] === 0, `worst ${worst[1].toFixed(1)} m near the shore`);
+  check('merge: lake is level, also where it was 66 m too low', worst[2] <= 4.1 && data[50 * nx + 120] === 150 && data[40 * nx + 120] === 150, `worst ${worst[2].toFixed(1)} m at the shore`);
+  check('merge: patch in the other height system is replaced', worst[3] <= 0.5, `worst ${worst[3].toFixed(2)} m`);
+  check('merge: a summit the reference rounds off keeps the fine source', worst[5] <= 2.5, `worst ${worst[5].toFixed(1)} m`);
+  check('merge: small blunders and small wrong-system patches on open ground are replaced', worst[6] <= 0.5, `worst ${worst[6].toFixed(2)} m`);
+  check('merge: a thin cliff band keeps the fine source', cliffKept === cliffCells, `${cliffKept}/${cliffCells}`);
+  check('merge: replaced share reported', replaced > 0.2 && replaced < 0.5, replaced.toFixed(3));
+
+  const m = new Uint8Array(100);
+  for (const o of [11, 12, 13, 21, 22, 23, 31, 32, 33, 34, 35, 77]) m[o] = 1; // 3x3 block with a tail, and a lone cell
+  const t = thickRegions(m, 10, 10, 1);
+  check('thickRegions: keeps a block with its tail, drops a lone cell', t[22] === 1 && t[35] === 1 && t[77] === 0 && t.reduce((s, v) => s + v, 0) === 11);
+  const dd = distanceTo(m, 10, 10);
+  check('distanceTo: zero on the mask, grows outside', dd[22] === 0 && dd[14] === 1 && Math.abs(dd[99] - 2.8284) < 1e-3, String(dd[99]));
+  const f = flatMask(Float32Array.from({ length: 100 }, (_, o) => (o % 10 < 6 ? 5 : o % 10)), 10, 10, 1, 0.01);
+  check('flatMask: level interior only', f[22] === 1 && f[24] === 1 && f[25] === 0 && f[28] === 0);
 }
 
 // Number formatting
