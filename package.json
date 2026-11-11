@@ -1,0 +1,8 @@
+{
+  "name": "landlikan",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/geometry.test.mjs"
+  }
+}

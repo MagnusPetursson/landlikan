@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landlíkan – 3D-printable terrain of Iceland</title>
+<meta name="description" content="Select an area of Iceland on the map and export it as a watertight STL for 3D printing or as stacked contour layers in SVG for laser cutting.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+<script>
+(function () {
+  var stored = null;
+  try { stored = localStorage.getItem('landlikan.theme'); } catch (e) {}
+  var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+})();
+</script>
+<script type="importmap">{ "imports": { "three": "./vendor/three/three.module.min.js" } }</script>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <span class="brand-mark" data-icon="mountain" data-icon-size="20"></span>
+    <span class="brand-name">Landlíkan</span>
+  </div>
+  <div class="bar-actions">
+    <button type="button" class="btn quiet" id="aboutOpen"><span data-icon="info"></span><span data-t="about"></span></button>
+    <div class="seg" role="group" data-t-label="language" id="langSeg">
+      <button type="button" data-lang="is" lang="is" aria-label="Íslenska"><span class="long">Íslenska</span><span class="short" aria-hidden="true">IS</span></button>
+      <button type="button" data-lang="en" lang="en" aria-label="English"><span class="long">English</span><span class="short" aria-hidden="true">EN</span></button>
+    </div>
+    <button type="button" class="btn quiet icon-only" id="themeToggle" data-t-label="theme" data-t-title="theme"><span id="themeIcon"></span></button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel" id="panel">
+   <div class="panel-scroll" id="panelScroll">
+
+    <section class="group" aria-labelledby="hArea">
+      <h2 id="hArea" data-t="area"></h2>
+      <div class="field">
+        <div class="combo" id="combo">
+          <span class="combo-icon" data-icon="search"></span>
+          <input type="text" id="search" data-t-label="search" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="results" aria-autocomplete="list" data-t-placeholder="searchPlaceholder">
+          <button type="button" class="combo-clear" id="searchClear" data-t-label="clearSearch" data-t-title="clearSearch" hidden><span data-icon="x" data-icon-size="14"></span></button>
+          <ul class="results" id="results" role="listbox" data-t-label="search" hidden></ul>
+        </div>
+        <p class="status" id="searchStatus" role="status" hidden></p>
+      </div>
+      <dl class="stats" id="areaStats">
+        <div><dt data-t="areaSize"></dt><dd id="areaSize"></dd></div>
+        <div><dt data-t="areaCentre"></dt><dd id="areaCentre"></dd></div>
+      </dl>
+      <p class="status" id="areaEmpty" data-t="noArea" hidden></p>
+    </section>
+
+    <section class="group" aria-labelledby="hModel">
+      <h2 id="hModel" data-t="model"></h2>
+      <div class="field">
+        <label for="width" data-t="width"></label>
+        <div class="field-row">
+          <input type="range" id="widthRange" min="40" max="400" step="1" tabindex="-1" aria-hidden="true">
+          <span class="num"><input type="number" id="width" min="40" max="400" step="1" inputmode="decimal"><span class="unit">mm</span></span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="exag" data-t="exaggeration"></label>
+        <div class="field-row">
+          <input type="range" id="exagRange" min="0.5" max="5" step="0.1" tabindex="-1" aria-hidden="true">
+          <span class="num"><input type="number" id="exag" min="0.5" max="5" step="0.1" inputmode="decimal"><span class="unit">×</span></span>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label" id="detailLabel" data-t="detail"></span>
+        <div class="seg wide" role="group" aria-labelledby="detailLabel" id="detailSeg">
+          <button type="button" data-detail="standard" data-t="detailStandard"></button>
+          <button type="button" data-detail="high" data-t="detailHigh"></button>
+          <button type="button" data-detail="max" data-t="detailMax"></button>
+        </div>
+      </div>
+      <dl class="stats" id="modelStats">
+        <div><dt data-t="size"></dt><dd id="statSize">–</dd></div>
+        <div><dt data-t="scale"></dt><dd id="statScale">–</dd></div>
+        <div><dt data-t="elevation"></dt><dd id="statElevation">–</dd></div>
+        <div><dt data-t="spacing"></dt><dd id="statSpacing">–</dd></div>
+      </dl>
+      <div id="modelNotice"></div>
+    </section>
+
+    <section class="group" aria-labelledby="hOutput">
+      <h2 id="hOutput" data-t="output"></h2>
+      <div class="seg wide" role="tablist" aria-labelledby="hOutput" id="modeSeg">
+        <button type="button" role="tab" id="tabPrint" aria-controls="panePrint" data-mode="print"><span data-icon="box"></span><span data-t="print"></span></button>
+        <button type="button" role="tab" id="tabLaser" aria-controls="paneLaser" data-mode="laser"><span data-icon="layers"></span><span data-t="laser"></span></button>
+      </div>
+
+      <div class="pane" id="panePrint" role="tabpanel" aria-labelledby="tabPrint">
+        <div class="field">
+          <label for="base" data-t="base"></label>
+          <div class="field-row">
+            <input type="range" id="baseRange" min="0.4" max="20" step="0.2" tabindex="-1" aria-hidden="true">
+            <span class="num"><input type="number" id="base" min="0.4" max="20" step="0.2" inputmode="decimal"><span class="unit">mm</span></span>
+          </div>
+        </div>
+        <dl class="stats">
+          <div><dt data-t="triangles"></dt><dd id="statTriangles">–</dd></div>
+          <div><dt data-t="fileSize"></dt><dd id="statFile">–</dd></div>
+          <div><dt data-t="volume"></dt><dd id="statVolume">–</dd></div>
+        </dl>
+      </div>
+
+      <div class="pane" id="paneLaser" role="tabpanel" aria-labelledby="tabLaser" hidden>
+        <div class="field">
+          <label for="thickness" data-t="thickness"></label>
+          <div class="field-row">
+            <input type="range" id="thicknessRange" min="0.5" max="20" step="0.1" tabindex="-1" aria-hidden="true">
+            <span class="num"><input type="number" id="thickness" min="0.5" max="20" step="0.1" inputmode="decimal"><span class="unit">mm</span></span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label" id="sheetLabel" data-t="sheet"></span>
+          <div class="field-row pair" role="group" aria-labelledby="sheetLabel">
+            <span class="num"><input type="number" id="sheetW" min="100" max="3000" step="10" inputmode="decimal" data-t-label="sheetWidth"><span class="unit">mm</span></span>
+            <span class="times" aria-hidden="true">×</span>
+            <span class="num"><input type="number" id="sheetH" min="100" max="3000" step="10" inputmode="decimal" data-t-label="sheetHeight"><span class="unit">mm</span></span>
+          </div>
+        </div>
+        <dl class="stats">
+          <div><dt data-t="layers"></dt><dd id="statLayers">–</dd></div>
+          <div><dt data-t="interval"></dt><dd id="statInterval">–</dd></div>
+          <div><dt data-t="stack"></dt><dd id="statStack">–</dd></div>
+          <div><dt data-t="sheets"></dt><dd id="statSheets">–</dd></div>
+          <div><dt data-t="cutLength"></dt><dd id="statCut">–</dd></div>
+        </dl>
+      </div>
+    </section>
+   </div>
+   <div class="panel-foot">
+    <div id="printNotice" role="status"></div>
+    <div id="laserNotice" role="status"></div>
+    <button type="button" class="btn primary" id="exportStl" disabled><span data-icon="download"></span><span data-t="exportStl"></span></button>
+    <button type="button" class="btn primary" id="exportSvg" disabled hidden><span data-icon="download"></span><span data-t="exportSvg"></span></button>
+   </div>
+  </aside>
+
+  <section class="map-pane" aria-labelledby="hArea">
+    <div id="map"></div>
+    <div class="overlay top-left">
+      <button type="button" class="btn raised" id="draw"><span data-icon="square-dashed-mouse-pointer"></span><span id="drawLabel"></span></button>
+    </div>
+    <div class="overlay top-right">
+      <div class="seg raised" role="group" data-t-label="baseLayer" id="baseSeg">
+        <button type="button" data-base="map" data-t-label="baseMap"><span data-icon="map"></span><span class="long" data-t="baseMap"></span></button>
+        <button type="button" data-base="satellite" data-t-label="baseSatellite"><span data-icon="satellite"></span><span class="long" data-t="baseSatellite"></span></button>
+      </div>
+    </div>
+    <div class="overlay below-tools" id="drawHint" role="status" hidden>
+      <span data-t="drawHint"></span>
+      <span class="chip-value" id="draftSize"></span>
+    </div>
+  </section>
+
+  <section class="view-pane" aria-labelledby="hModel">
+   <div class="view-stage" id="viewStage">
+    <div id="view"></div>
+    <div class="overlay top-left toolbar" id="viewTools">
+      <div class="seg raised" role="group" data-t-label="viewTab" id="viewSeg" hidden>
+        <button type="button" data-view="model" data-t="viewModel"></button>
+        <button type="button" data-view="sheets" data-t="viewSheets"></button>
+      </div>
+      <div class="seg raised" role="group" data-t-label="surface" id="surfaceSeg">
+        <button type="button" data-surface="satellite" data-t="surfaceSatellite"></button>
+        <button type="button" data-surface="plain" data-t="surfacePlain"></button>
+      </div>
+      <label class="slider raised" id="sunSlider" for="sun" data-t-title="sun">
+        <span data-icon="sun"></span>
+        <input type="range" id="sun" min="0" max="360" step="5" data-t-label="sun">
+        <span class="value" id="sunValue"></span>
+      </label>
+      <button type="button" class="btn raised icon-only" id="resetView" data-t-label="resetView" data-t-title="resetView"><span data-icon="rotate-ccw"></span></button>
+    </div>
+    <figure class="sheet" id="sheetFigure" hidden>
+      <div class="sheet-art" id="sheetArt"></div>
+      <figcaption>
+        <div class="sheet-nav">
+          <button type="button" class="btn icon-only small" id="sheetPrev" data-t-label="prevSheet" data-t-title="prevSheet"><span class="turn-left" data-icon="chevron-down"></span></button>
+          <span id="sheetCaption"></span>
+          <button type="button" class="btn icon-only small" id="sheetNext" data-t-label="nextSheet" data-t-title="nextSheet"><span class="turn-right" data-icon="chevron-down"></span></button>
+        </div>
+        <ul class="legend">
+          <li><span class="swatch cut"></span><span data-t="legendCut"></span></li>
+          <li><span class="swatch score"></span><span data-t="legendScore"></span></li>
+        </ul>
+      </figcaption>
+    </figure>
+    <div class="compass" id="compass" aria-hidden="true" hidden>
+      <svg viewBox="0 0 40 40" width="40" height="40"><g id="compassNeedle"><path d="M20 5 L25 21 L20 18 L15 21 Z" fill="currentColor"/><path d="M20 35 L25 21 L20 24 L15 21 Z" fill="none" stroke="currentColor" stroke-width="1.2"/></g></svg>
+      <span data-t="north"></span>
+    </div>
+    <div class="overlay bottom-left chip" id="imageChip" role="status" hidden><span class="spin" data-icon="loader-circle"></span><span data-t="stageImage"></span></div>
+    <div class="centre" id="viewEmpty" hidden>
+      <span data-icon="scan" data-icon-size="28"></span>
+      <p data-t="noArea"></p>
+    </div>
+    <div class="centre card" id="progress" role="status" hidden>
+      <div class="progress-head"><span class="spin" data-icon="loader-circle" data-icon-size="18"></span><strong id="progressStage"></strong></div>
+      <div class="progress-bar"><span id="progressFill"></span></div>
+      <div class="progress-meta"><span id="progressDetail"></span><span id="progressTime"></span></div>
+      <p class="status" id="progressSlow" hidden data-t="slow"></p>
+      <button type="button" class="btn" id="progressCancel"><span data-icon="x"></span><span data-t="cancel"></span></button>
+    </div>
+    <div class="overlay bottom-centre" id="viewNotice"></div>
+   </div>
+   <footer class="view-foot">
+    <span id="viewHint" data-t="viewHint"></span>
+    <span class="credits" data-t="credits"></span>
+   </footer>
+  </section>
+</main>
+
+<dialog id="about" aria-labelledby="aboutTitle">
+  <div class="dialog-head">
+    <h2 id="aboutTitle" data-t="about"></h2>
+    <button type="button" class="btn quiet icon-only" id="aboutClose" data-t-label="close" data-t-title="close"><span data-icon="x"></span></button>
+  </div>
+  <div class="dialog-body">
+    <h3 data-t="aboutElevationHead"></h3><p data-t="aboutElevation"></p>
+    <h3 data-t="aboutImageHead"></h3><p data-t="aboutImage"></p>
+    <h3 data-t="aboutMapHead"></h3><p data-t="aboutMap"></p>
+    <h3 data-t="aboutScaleHead"></h3><p data-t="aboutScale"></p>
+    <h3 data-t="aboutPrivacyHead"></h3><p data-t="aboutPrivacy"></p>
+    <h3 data-t="aboutSoftwareHead"></h3><p data-t="aboutSoftware"></p>
+  </div>
+</dialog>
+
+<noscript><p class="noscript">Landlíkan needs JavaScript. / Landlíkan þarf JavaScript.</p></noscript>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
